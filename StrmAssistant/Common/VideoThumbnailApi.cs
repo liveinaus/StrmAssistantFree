@@ -41,21 +41,12 @@ namespace StrmAssistant.Common
             try
             {
                 var embyProviders = Assembly.Load("Emby.Providers");
-                var thumbnailGenerator = embyProviders.GetType("Emby.Providers.MediaInfo.ThumbnailGenerator");
-                var thumbnailGeneratorConstructor = thumbnailGenerator.GetConstructor(
-                    BindingFlags.Public | BindingFlags.Instance, null,
-                    new[]
-                    {
-                        typeof(IFileSystem), typeof(ILogger), typeof(IImageExtractionManager),
-                        typeof(IItemRepository), typeof(IMediaMountManager), typeof(IServerApplicationPaths),
-                        typeof(ILibraryMonitor), typeof(IFfmpegManager)
-                    }, null);
-                _thumbnailGenerator = thumbnailGeneratorConstructor?.Invoke(new object[]
-                {
-                    fileSystem, _logger, imageExtractionManager, itemRepository, mediaMountManager,
-                    applicationPaths, libraryMonitor, ffmpegManager
-                });
-                _refreshThumbnailImages = thumbnailGenerator.GetMethod("RefreshThumbnailImages",
+                var thumbnailGeneratorType =
+                    embyProviders.GetType("Emby.Providers.MediaInfo.ThumbnailGenerator");
+
+                // Use CreateInstance so Emby's DI resolves any constructor changes across server versions.
+                _thumbnailGenerator = Plugin.Instance.ApplicationHost.CreateInstance(thumbnailGeneratorType);
+                _refreshThumbnailImages = thumbnailGeneratorType.GetMethod("RefreshThumbnailImages",
                     BindingFlags.Public | BindingFlags.Instance);
             }
             catch (Exception e)

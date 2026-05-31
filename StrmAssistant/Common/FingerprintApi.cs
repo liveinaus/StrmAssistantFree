@@ -54,32 +54,25 @@ namespace StrmAssistant.Common
             try
             {
                 var embyProviders = Assembly.Load("Emby.Providers");
-                var audioFingerprintManager = embyProviders.GetType("Emby.Providers.Markers.AudioFingerprintManager");
-                var audioFingerprintManagerConstructor = audioFingerprintManager.GetConstructor(
-                    BindingFlags.Public | BindingFlags.Instance, null,
-                    new[]
-                    {
-                        typeof(IFileSystem), typeof(ILogger), typeof(IApplicationPaths), typeof(IFfmpegManager),
-                        typeof(IMediaEncoder), typeof(IMediaMountManager), typeof(IJsonSerializer),
-                        typeof(IServerApplicationHost)
-                    }, null);
-                _audioFingerprintManager = audioFingerprintManagerConstructor?.Invoke(new object[]
-                {
-                    fileSystem, _logger, applicationPaths, ffmpegManager, mediaEncoder, mediaMountManager,
-                    jsonSerializer, serverApplicationHost
-                });
-                _createTitleFingerprint = audioFingerprintManager.GetMethod("CreateTitleFingerprint",
+                var audioFingerprintManagerType =
+                    embyProviders.GetType("Emby.Providers.Markers.AudioFingerprintManager");
+
+                // Use CreateInstance so Emby's DI resolves any constructor changes across server versions.
+                _audioFingerprintManager =
+                    Plugin.Instance.ApplicationHost.CreateInstance(audioFingerprintManagerType);
+
+                _createTitleFingerprint = audioFingerprintManagerType.GetMethod("CreateTitleFingerprint",
                     BindingFlags.Public | BindingFlags.Instance, null,
                     new[]
                     {
                         typeof(Episode), typeof(LibraryOptions), typeof(IDirectoryService),
                         typeof(CancellationToken)
                     }, null);
-                _getAllFingerprintFilesForSeason = audioFingerprintManager.GetMethod("GetAllFingerprintFilesForSeason",
+                _getAllFingerprintFilesForSeason = audioFingerprintManagerType.GetMethod(
+                    "GetAllFingerprintFilesForSeason", BindingFlags.Public | BindingFlags.Instance);
+                _updateSequencesForSeason = audioFingerprintManagerType.GetMethod("UpdateSequencesForSeason",
                     BindingFlags.Public | BindingFlags.Instance);
-                _updateSequencesForSeason = audioFingerprintManager.GetMethod("UpdateSequencesForSeason",
-                    BindingFlags.Public | BindingFlags.Instance);
-                _timeoutMs = audioFingerprintManager.GetField("TimeoutMs",
+                _timeoutMs = audioFingerprintManagerType.GetField("TimeoutMs",
                     BindingFlags.NonPublic | BindingFlags.Instance);
                 PatchTimeout(Plugin.Instance.GetPluginOptions().GeneralOptions.MaxConcurrentCount);
             }
@@ -131,6 +124,7 @@ namespace StrmAssistant.Common
 
         public void PatchTimeout(int maxConcurrentCount)
         {
+            if (_timeoutMs == null || _audioFingerprintManager == null) return;
             var newTimeout = maxConcurrentCount * Convert.ToInt32(TimeSpan.FromMinutes(10.0).TotalMilliseconds);
             _timeoutMs.SetValue(_audioFingerprintManager, newTimeout);
         }

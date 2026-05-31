@@ -34,6 +34,7 @@ namespace StrmAssistant.Common
 
         private const string MediaInfoFileExtension = "-mediainfo.json";
 
+        // true when server is 4.9.0.25–4.9.1.x range where 7-param override exists only on implementation
         private readonly bool _fallbackApproach;
         private readonly MethodInfo _getStaticMediaSources;
 
@@ -61,6 +62,8 @@ namespace StrmAssistant.Common
             {
                 try
                 {
+                    // 4.9.0.25–4.9.1.x: 7-param overload exists only on the implementation class.
+                    // 4.9.1.0+ exposes an 8-param overload on the public interface; no reflection needed there.
                     _getStaticMediaSources = mediaSourceManager.GetType()
                         .GetMethod("GetStaticMediaSources",
                             new[]
@@ -68,7 +71,7 @@ namespace StrmAssistant.Common
                                 typeof(BaseItem), typeof(bool), typeof(bool), typeof(bool), typeof(LibraryOptions),
                                 typeof(DeviceProfile), typeof(User)
                             });
-                    _fallbackApproach = true;
+                    _fallbackApproach = _getStaticMediaSources != null;
                 }
                 catch (Exception e)
                 {
@@ -77,11 +80,6 @@ namespace StrmAssistant.Common
                         _logger.Debug(e.Message);
                         _logger.Debug(e.StackTrace);
                     }
-                }
-
-                if (_getStaticMediaSources is null)
-                {
-                    _logger.Warn($"{nameof(MediaInfoApi)} Init Failed");
                 }
             }
 
@@ -100,20 +98,16 @@ namespace StrmAssistant.Common
             }
             catch (Exception e)
             {
-                if (Plugin.Instance.DebugMode)
-                {
-                    _logger.Debug(e.Message);
-                    _logger.Debug(e.StackTrace);
-                }
-
-                _logger.Warn($"{nameof(MediaInfoApi)} Init Failed");
+                _logger.Debug(e.Message);
+                if (Plugin.Instance.DebugMode) _logger.Debug(e.StackTrace);
             }
         }
 
         private List<MediaSourceInfo> GetStaticMediaSourcesByApi(BaseItem item, bool enableAlternateMediaSources,
             LibraryOptions libraryOptions)
         {
-            return _mediaSourceManager.GetStaticMediaSources(item, enableAlternateMediaSources, false,
+            // SDK 4.9.1.90+: 8-param overload on the public interface (collectionFolders = null uses defaults)
+            return _mediaSourceManager.GetStaticMediaSources(item, enableAlternateMediaSources, false, false, null,
                 libraryOptions, null, null);
         }
 
@@ -128,9 +122,10 @@ namespace StrmAssistant.Common
         {
             var options = _libraryManager.GetLibraryOptions(item);
 
-            return !_fallbackApproach
-                ? GetStaticMediaSourcesByApi(item, enableAlternateMediaSources, options)
-                : GetStaticMediaSourcesByRef(item, enableAlternateMediaSources, options);
+            // Use reflection only for the 4.9.0.25–4.9.1.x range; 4.9.1.0+ gets the public 8-param API.
+            return _fallbackApproach
+                ? GetStaticMediaSourcesByRef(item, enableAlternateMediaSources, options)
+                : GetStaticMediaSourcesByApi(item, enableAlternateMediaSources, options);
         }
 
         public MetadataRefreshOptions GetMediaInfoRefreshOptions()

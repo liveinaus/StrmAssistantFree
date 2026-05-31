@@ -44,23 +44,14 @@ namespace StrmAssistant.Common
             try
             {
                 var embyProviders = Assembly.Load("Emby.Providers");
+
                 var subtitleResolverType = embyProviders.GetType("Emby.Providers.MediaInfo.SubtitleResolver");
-                var subtitleResolverConstructor = subtitleResolverType.GetConstructor(new[]
-                {
-                    typeof(ILocalizationManager), typeof(IFileSystem), typeof(ILibraryManager)
-                });
-                _subtitleResolver = subtitleResolverConstructor?.Invoke(new object[]
-                {
-                    localizationManager, fileSystem, libraryManager
-                });
+                // Use CreateInstance so Emby's DI resolves any constructor changes across server versions.
+                _subtitleResolver = Plugin.Instance.ApplicationHost.CreateInstance(subtitleResolverType);
                 _getExternalSubtitleStreams = subtitleResolverType.GetMethod("GetExternalSubtitleStreams");
 
                 var ffProbeSubtitleInfoType = embyProviders.GetType("Emby.Providers.MediaInfo.FFProbeSubtitleInfo");
-                var ffProbeSubtitleInfoConstructor = ffProbeSubtitleInfoType.GetConstructor(new[]
-                {
-                    typeof(IMediaProbeManager)
-                });
-                _ffProbeSubtitleInfo = ffProbeSubtitleInfoConstructor?.Invoke(new object[] { mediaProbeManager });
+                _ffProbeSubtitleInfo = Plugin.Instance.ApplicationHost.CreateInstance(ffProbeSubtitleInfoType);
                 _updateExternalSubtitleStream = ffProbeSubtitleInfoType.GetMethod("UpdateExternalSubtitleStream");
             }
             catch (Exception e)
@@ -113,7 +104,10 @@ namespace StrmAssistant.Common
 
         public bool HasExternalSubtitleChanged(BaseItem item, IDirectoryService directoryService, bool clearCache)
         {
-            var currentExternalSubtitleFiles = _libraryManager.GetExternalSubtitleFiles(item.InternalId);
+            // GetExternalSubtitleFiles was removed in Emby 4.9.x; use GetExternalTracks instead.
+            var currentExternalSubtitleFiles = _libraryManager
+                .GetExternalTracks(item.InternalId, new[] { MediaStreamType.Subtitle }, CancellationToken.None)
+                .Select(t => t.Item1);
             var currentSet = new HashSet<string>(currentExternalSubtitleFiles, StringComparer.Ordinal);
 
             try
